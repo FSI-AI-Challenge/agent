@@ -1,0 +1,124 @@
+{
+  "user_profile": [
+    {
+      "month": 1,
+      "monthly_income": 3000000,
+      "fixed_expense": {
+        "rent": 800000,
+        "insurance": 200000,
+        "transport": 150000,
+        "living_cost": 500000
+      }
+    },
+    {
+      "month": 2,
+      "monthly_income": 3000000,
+      "fixed_expense": {
+        "rent": 800000,
+        "insurance": 200000,
+        "transport": 150000,
+        "living_cost": 480000
+      }
+    },
+    {
+      "month": 3,
+      "monthly_income": 3100000,
+      "fixed_expense": {
+        "rent": 800000,
+        "insurance": 200000,
+        "transport": 160000,
+        "living_cost": 550000
+      }
+    },
+    {
+      "month": 4,
+      "monthly_income": 3000000,
+      "fixed_expense": {
+        "rent": 800000,
+        "insurance": 200000,
+        "transport": 150000,
+        "living_cost": 510000
+      }
+    },
+    {
+      "month": 5,
+      "monthly_income": 3000000,
+      "fixed_expense": {
+        "rent": 800000,
+        "insurance": 200000,
+        "transport": 150000,
+        "living_cost": 490000
+      }
+    },
+    {
+      "month": 6,
+      "monthly_income": 3000000,
+      "fixed_expense": {
+        "rent": 800000,
+        "insurance": 200000,
+        "transport": 170000,
+        "living_cost": 500000
+      }
+    },
+    {
+      "month": 7,
+      "monthly_income": 3100000,
+      "fixed_expense": {
+        "rent": 800000,
+        "insurance": 200000,
+        "transport": 150000,
+        "living_cost": 520000
+      }
+    },
+    {
+      "month": 8,
+      "monthly_income": 3000000,
+      "fixed_expense": {
+        "rent": 800000,
+        "insurance": 200000,
+        "transport": 150000,
+        "living_cost": 500000
+      }
+    },
+    {
+      "month": 9,
+      "monthly_income": 3000000,
+      "fixed_expense": {
+        "rent": 800000,
+        "insurance": 200000,
+        "transport": 160000,
+        "living_cost": 480000
+      }
+    },
+    {
+      "month": 10,
+      "monthly_income": 3000000,
+      "fixed_expense": {
+        "rent": 800000,
+        "insurance": 200000,
+        "transport": 150000,
+        "living_cost": 530000
+      }
+    },
+    {
+      "month": 11,
+      "monthly_income": 3100000,
+      "fixed_expense": {
+        "rent": 800000,
+        "insurance": 200000,
+        "transport": 150000,
+        "living_cost": 500000
+      }
+    },
+    {
+      "month": 12,
+      "monthly_income": 3000000,
+      "fixed_expense": {
+        "rent": 800000,
+        "insurance": 200000,
+        "transport": 150000,
+        "living_cost": 520000
+      }
+    }
+  ]
+}
