@@ -144,13 +144,14 @@ class GraphState(TypedDict):
     # 대화 메시지 (LangChain messages)
     messages: Annotated[List, add_messages]
 
-def start(state:GraphState):
+def start(state:GraphState) -> GraphState:
     return GraphState()
 
-def chatbot(state:GraphState):
+def chatbot(state:GraphState) -> GraphState:
+    print("챗봇 시작")
     question = state['question']
     response = llm.invoke(question)
-
+    print(f"챗봇 종료: {response.content}")
     return GraphState(answer=response.content)
 
 def get_goal(state:GraphState) -> GraphState:
@@ -169,7 +170,7 @@ def get_goal(state:GraphState) -> GraphState:
     response = llm.invoke(prompt)
     data = json.loads(response.content)
     
-    print("목표 금액, 기간 추출 종료")
+    print(f"목표 금액, 기간 추출 종료: {data}")
     return GraphState(
         goal=Goal(
             target_amount=int(data["target_amount"]), 
@@ -204,10 +205,10 @@ def load_profile(state:GraphState) -> GraphState:
         You are an assistant that analyzes personal finance transaction data.
 
         Tasks:
-        1) Identify the average fixed income.
-        2) Identify the average fixed expenses.
-        3) Identify the average variable expenses.
-        4) Compute the average investable amount = fixed_income - (fixed_expenses + variable_expenses).
+        1) Identify the average fixed income per month.
+        2) Identify the average fixed expenses per month.
+        3) Identify the average variable expenses per month.
+        4) Compute the average investable amount per month = fixed_income - (fixed_expenses + variable_expenses).
 
         Return ONLY valid JSON, no markdown, no code block. 
         Keys:
@@ -355,16 +356,13 @@ graph.add_edge("chatbot", END)
 #     }
 # )
 # graph.add_edge("get_goal", "load_profile")
-# graph.add_edge("load_profile", "calc_investable")
-# graph.add_edge("calc_investable", "chatbot")
-# graph.add_edge("chatbot", "get_percent")
+# graph.add_edge("load_profile", "hitl_confirm_input")
+# graph.add_edge("hitl_confirm_input", "get_percent")
 # graph.add_edge("get_percent", "retrieve_products")
 # graph.add_edge("retrieve_products", "select_products")
 # graph.add_edge("select_products", "build_indicates")
-# graph.add_edge("build_indicates", "chatbot")
-# graph.add_edge("chatbot", "build_portfolios")
-# graph.add_edge("build_portfolios", "chatbot")
-# graph.add_edge("chatbot", "crawl_news")
+# graph.add_edge("build_indicates", "build_portfolios")
+# graph.add_edge("build_portfolios", "crawl_news")
 # graph.add_edge("crawl_news", "summarize_news")
 # graph.add_edge("summarize_news", "analyze_sentiment")
 # graph.add_edge("analyze_sentiment", "evaluate_rebalance")
@@ -373,17 +371,10 @@ graph.add_edge("chatbot", END)
 #     is_rebalance_needed,
 #     {
 #         "yes":"crawl_news",
-#         "no":"chatbot"
+#         "no":"start"
 #     }
 # )
-# graph.add_conditional_edges(
-#     "chatbot",
-#     is_goal_reached,
-#     {
-#         "yes":END,
-#         "no":"crawl_news"
-#     }
-# )
+# graph.add_edge("chatbot", "start")
 
 from langgraph.checkpoint.memory import MemorySaver
 
@@ -413,7 +404,7 @@ print(result)
 
 target_amount = result['goal'].target_amount
 target_months = result['goal'].target_months
-investable_amount = result['investable_amount'] - 1000000
+investable_amount = result['investable_amount'] - 100000
 
 result = app.invoke(Command(resume={"target_amount":target_amount, "target_months":target_months, "investable_amount":investable_amount}), config)
 print(result)
