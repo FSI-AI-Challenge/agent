@@ -148,7 +148,10 @@ def start(state:GraphState):
     return GraphState()
 
 def chatbot(state:GraphState):
-    return GraphState()
+    question = state['question']
+    response = llm.invoke(question)
+
+    return GraphState(answer=response.content)
 
 def get_goal(state:GraphState) -> GraphState:
     print("목표 금액, 기간 추출 시작")
@@ -254,14 +257,26 @@ def analyze_sentiment(state:GraphState):
 def evaluate_rebalance(state:GraphState):
     return GraphState()
 
-def is_our_service(state:GraphState):
-    return "yes"
+def is_our_service(state:GraphState) -> str:
+    print("서비스 판단 시작")
+    question = state['question']
+
+    prompt = f'''
+        You are a classifier. Decide whether the user's message expresses intent to use a savings or investment guidance service.
+        Answer only yes or no.
+
+        User Input: {question}
+    '''
+    response = llm.invoke(prompt)
+    print(f"서비스 판단 종료: {response.content}")
+    return response.content
 
 def is_goal_reached(state:GraphState):
     return "yes"
 
 def is_rebalance_needed(state:GraphState):
     return "yes"
+
 from langchain_teddynote.graphs import visualize_graph
 
 graph = StateGraph(GraphState)
@@ -281,9 +296,17 @@ graph.add_node("analyze_sentiment", analyze_sentiment)
 graph.add_node("evaluate_rebalance", evaluate_rebalance)
 
 graph.set_entry_point("start")
-graph.add_edge("start", "get_goal")
+graph.add_conditional_edges(
+    "start",
+    is_our_service,
+    {
+        "yes":"get_goal",
+        "no":"chatbot"
+    }
+)
 graph.add_edge("get_goal", "load_profile")
 graph.add_edge("load_profile", END)
+graph.add_edge("chatbot", END)
 # graph.add_edge("get_goal", "load_profile")
 # graph.add_edge("load_profile", "calc_investable")
 # graph.add_edge("calc_investable", "chatbot")
@@ -333,8 +356,10 @@ created_ts = datetime.now(KST).isoformat()
 
 config = RunnableConfig(recursion_limit=10, configurable={"thread_id":random_uuid()})
 
+# inputs = GraphState(user_id=user_id, created_ts=created_ts, 
+#                     question=f"내 목표 금액은 {target_amount}이고, {target_months}개월 동안 모을거야.")
 inputs = GraphState(user_id=user_id, created_ts=created_ts, 
-                    question=f"내 목표 금액은 {target_amount}이고, {target_months}개월 동안 모을거야.")
+                    question=f"예금과 주식의 차이가 뭐야.")
 
 result = app.invoke(inputs, config)
 print(result)
