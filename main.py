@@ -1,11 +1,10 @@
 from langgraph.graph import StateGraph, add_messages, END
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.types import interrupt, Command
 from typing import Annotated, Dict, List, Optional, Tuple, TypedDict
 from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime, timezone, timedelta
 from langchain_ollama import ChatOllama
-from langchain_core.prompts import PromptTemplate
 import json
 
 llm = ChatOllama(model='gpt-oss:20b')
@@ -53,14 +52,8 @@ class Goal:
 
 @dataclass
 class IncomeExpense:
-    monthly_income: float                  # 월급(세후 등 기준 통일)
-    fixed_expense: float                   # 고정지출(월)
-
-@dataclass
-class Investable:
-    percent_input: float                   # 사용자가 입력한 % (0~100)
-    amount: float                          # 실제 투자 가능 금액(원)
-    rationale: str | None = None
+    fixed_income: int                  # 월급(세후 등 기준 통일)
+    fixed_expense: int                   # 고정지출(월)
 
 @dataclass
 class Product:
@@ -119,18 +112,18 @@ class RAGTrace:
     ids: List[str]                         # 검색된 상품/문서 id
     notes: str | None = None
 
-class GraphState(TypedDict):
+class GraphState(TypedDict): 
     user_id: int
     created_ts: str
     question:str
     answer:str
+    
     # 대화/프론트 단계
     ui_step: UIStep
 
     # 입력/프로필
     goal: Goal
-    income_expense: IncomeExpense
-    investable: Investable
+    investable_amount: int
     risk_preference: RiskLevel | None             # 마음 물어보기 결과를 리스크로 맵핑
 
     # RAG/추천
@@ -151,15 +144,20 @@ class GraphState(TypedDict):
     # 대화 메시지 (LangChain messages)
     messages: Annotated[List, add_messages]
 
+def start(state:GraphState):
+    return GraphState()
+
 def chatbot(state:GraphState):
     return GraphState()
 
 def get_goal(state:GraphState) -> GraphState:
+    print("목표 금액, 기간 추출 시작")
     question = state['question']
 
     prompt = f"""
         Extract the user's savings goal.
-        Return JSON with keys:
+        Return ONLY valid JSON, no markdown, no code block.
+        Keys:
         - target_amount (int)
         - target_months (int)
         User input: {question}
@@ -168,6 +166,7 @@ def get_goal(state:GraphState) -> GraphState:
     response = llm.invoke(prompt)
     data = json.loads(response.content)
     
+    print("목표 금액, 기간 추출 종료")
     return GraphState(
         goal=Goal(
             target_amount=int(data["target_amount"]), 
@@ -175,28 +174,58 @@ def get_goal(state:GraphState) -> GraphState:
         )
     )
 
-def load_profile(state:GraphState):
+def load_profile(state:GraphState) -> GraphState:
+    print("사용자 수입 및 지출 계산 시작")
+    # 추후 api로 대체
     user_id = state['user_id']
-    # tmp
     with open(f"./data/user_example_data{user_id}.json", "r", encoding="utf-8") as f:
         user_profile = json.load(f)
 
-    incomes = [m["monthly_income"] for m in user_profile["user_profile"]]
-    avg_income = sum(incomes) / len(incomes)
+    ts = datetime.fromisoformat(state["created_ts"])
+    current_year = ts.year
+    current_month = ts.month
 
-    # 고정지출 합계 리스트
-    expenses = [sum(m["fixed_expenses"].values()) for m in user_profile["user_profile"]]
-    avg_expense = sum(expenses) / len(expenses)
+    recent_months = []
+    for i in range(3):
+        month = (current_month - i - 1) % 12 + 1
+        year = current_year if current_month - i > 0 else current_year - 1
+        recent_months.append(f"{year}-{month:02d}")
 
+    recent_months = set(recent_months)
+
+    filtered_months = [
+        m for m in user_profile["months"] if m["month"] in recent_months
+    ]
+
+    template = '''
+        You are an assistant that analyzes personal finance transaction data.
+
+        Tasks:
+        1) Identify the average fixed income.
+        2) Identify the average fixed expenses.
+        3) Identify the average variable expenses.
+        4) Compute the average investable amount = fixed_income - (fixed_expenses + variable_expenses).
+
+        Return ONLY valid JSON, no markdown, no code block. 
+        Keys:
+        - fixed_income (int)
+        - fixed_expenses (int)
+        - variable_expenses (int)
+        - investable_amount (int)
+
+        User Input:
+        {}
+    '''
+    prompt = template.format(filtered_months)
+
+    response = llm.invoke(prompt)
+    print(response)
+    data = json.loads(response.content)
+
+    print("사용자 수입 및 지출 계산 종료")
     return GraphState(
-        income_expense=IncomeExpense(
-            monthly_income=avg_income,
-            fixed_expense=avg_expense
-        )
+        investable_amount=data["investable_amount"]
     )
-
-def calc_investable(state:GraphState):
-    return GraphState()
 
 def get_percent(state:GraphState):
     return GraphState()
@@ -224,6 +253,10 @@ def analyze_sentiment(state:GraphState):
 
 def evaluate_rebalance(state:GraphState):
     return GraphState()
+
+def is_our_service(state:GraphState):
+    return "yes"
+
 def is_goal_reached(state:GraphState):
     return "yes"
 
@@ -233,10 +266,10 @@ from langchain_teddynote.graphs import visualize_graph
 
 graph = StateGraph(GraphState)
 
+graph.add_node("start", start)
 graph.add_node("chatbot", chatbot)
 graph.add_node("get_goal", get_goal)
 graph.add_node("load_profile", load_profile)
-graph.add_node("calc_investable", calc_investable)
 graph.add_node("get_percent", get_percent)
 graph.add_node("retrieve_products", retrieve_products)
 graph.add_node("select_products", select_products)
@@ -247,9 +280,10 @@ graph.add_node("summarize_news", summarize_news)
 graph.add_node("analyze_sentiment", analyze_sentiment)
 graph.add_node("evaluate_rebalance", evaluate_rebalance)
 
-graph.set_entry_point("chatbot")
-graph.add_edge("chatbot", "get_goal")
-graph.add_edge("get_goal", END)
+graph.set_entry_point("start")
+graph.add_edge("start", "get_goal")
+graph.add_edge("get_goal", "load_profile")
+graph.add_edge("load_profile", END)
 # graph.add_edge("get_goal", "load_profile")
 # graph.add_edge("load_profile", "calc_investable")
 # graph.add_edge("calc_investable", "chatbot")
@@ -280,6 +314,9 @@ graph.add_edge("get_goal", END)
 #         "no":"crawl_news"
 #     }
 # )
+
+from langgraph.checkpoint.memory import MemorySaver
+
 memory = MemorySaver()
 app = graph.compile(checkpointer=memory)
 # visualize_graph(app)
@@ -289,12 +326,14 @@ from langchain_teddynote.messages import invoke_graph, stream_graph, random_uuid
 
 KST = timezone(timedelta(hours=9))
 
+user_id = 1
 target_amount = 1000000
 target_months = 6
+created_ts = datetime.now(KST).isoformat()
 
 config = RunnableConfig(recursion_limit=10, configurable={"thread_id":random_uuid()})
 
-inputs = GraphState(user_id=1, created_ts=datetime.now(KST).isoformat(), 
+inputs = GraphState(user_id=user_id, created_ts=created_ts, 
                     question=f"내 목표 금액은 {target_amount}이고, {target_months}개월 동안 모을거야.")
 
 result = app.invoke(inputs, config)
