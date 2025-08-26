@@ -230,6 +230,42 @@ def load_profile(state:GraphState) -> GraphState:
         investable_amount=data["investable_amount"]
     )
 
+def hitl_confirm_input(state:GraphState) -> GraphState:
+    print("사용자 입력 검증 시작")
+    proposed = {
+        "target_amount": state["goal"].target_amount,
+        "target_months": state["goal"].target_months,
+        "investable_amount": state["investable_amount"]
+    }
+    
+    decision = interrupt({
+        "step": "confirm_input",
+        "message": "목표 금액/기간, 투자 가능 금액을 확인 및 수정해주세요.",
+        "proposed": proposed,
+        "fields": [
+            {"name": "target_amount", "type": "number", "label": "목표 금액(원)"},
+            {"name": "target_months", "type": "number", "label": "목표 기간(개월)"},
+            {"name": "investable_amount", "type": "number", "label": "투자 가능 금액(원)"},
+        ],
+        "buttons": ["submit"]
+    })
+    
+    target_amount = int(decision.get("target_amount", proposed["target_amount"]))
+    target_months = int(decision.get("target_months", proposed["target_months"]))
+    investable_amount = int(decision.get("investable_amount", proposed["investable_amount"]))
+
+    if target_amount < 0 or target_months < 0 or investable_amount < 0:
+        raise ValueError("입력 값이 유효하지 않습니다.")
+
+    print(f"사용자 입력 검증 종료: {target_amount, target_months, investable_amount}")
+    return GraphState(
+        goal=Goal(
+            target_amount=int(decision["target_amount"]),
+            target_months=int(decision["target_months"]),
+        ),
+        investable_amount=decision["investable_amount"]
+    )
+
 def get_percent(state:GraphState):
     return GraphState()
 
@@ -305,8 +341,19 @@ graph.add_conditional_edges(
     }
 )
 graph.add_edge("get_goal", "load_profile")
-graph.add_edge("load_profile", END)
+graph.add_edge("load_profile", 'hitl_confirm_input')
+graph.add_edge("hitl_confirm_input", END)
 graph.add_edge("chatbot", END)
+
+# graph.set_entry_point("start")
+# graph.add_conditional_edges(
+#     "start",
+#     is_our_service,
+#     {
+#         "yes":"get_goal",
+#         "no":"chatbot"
+#     }
+# )
 # graph.add_edge("get_goal", "load_profile")
 # graph.add_edge("load_profile", "calc_investable")
 # graph.add_edge("calc_investable", "chatbot")
@@ -356,10 +403,17 @@ created_ts = datetime.now(KST).isoformat()
 
 config = RunnableConfig(recursion_limit=10, configurable={"thread_id":random_uuid()})
 
-# inputs = GraphState(user_id=user_id, created_ts=created_ts, 
-#                     question=f"내 목표 금액은 {target_amount}이고, {target_months}개월 동안 모을거야.")
 inputs = GraphState(user_id=user_id, created_ts=created_ts, 
-                    question=f"예금과 주식의 차이가 뭐야.")
+                    question=f"내 목표 금액은 {target_amount}이고, {target_months}개월 동안 모을거야.")
+# inputs = GraphState(user_id=user_id, created_ts=created_ts, 
+#                     question=f"예금과 주식의 차이가 뭐야.")
 
 result = app.invoke(inputs, config)
+print(result)
+
+target_amount = result['goal'].target_amount
+target_months = result['goal'].target_months
+investable_amount = result['investable_amount'] - 1000000
+
+result = app.invoke(Command(resume={"target_amount":target_amount, "target_months":target_months, "investable_amount":investable_amount}), config)
 print(result)
