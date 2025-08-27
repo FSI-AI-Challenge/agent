@@ -9,18 +9,15 @@ FSS_API_KEY = os.getenv("FSS_API_KEY")
 
 JOIN_DENY_MAP = {"1":"제한없음", "2":"서민전용", "3":"일부제한"}
 
-def make_depositProductsSearch_url(auth, topFinGrpNo, pageNo):
-    return f"https://finlife.fss.or.kr/finlifeapi/depositProductsSearch.json?auth={auth}&topFinGrpNo={topFinGrpNo}&pageNo={pageNo}"
-
-def make_savingProductsSearch_url(auth, topFinGrpNo, pageNo):
-    return f"https://finlife.fss.or.kr/finlifeapi/savingProductsSearch.json?auth={auth}&topFinGrpNo={topFinGrpNo}&pageNo={pageNo}"
+def make_url(product, auth, topFinGrpNo, pageNo):
+    return f"https://finlife.fss.or.kr/finlifeapi/{product}ProductsSearch.json?auth={auth}&topFinGrpNo={topFinGrpNo}&pageNo={pageNo}"
 
 def depositProductsSearch():
     
     topFinGrpNo = ["020000", "030200", "030300", "050000", "060000",]
 
     for no in topFinGrpNo:
-        url = f"https://finlife.fss.or.kr/finlifeapi/depositProductsSearch.json?auth={FSS_API_KEY}&topFinGrpNo={no}&pageNo=1"
+        url = make_url("deposit", FSS_API_KEY, no, 1)
         response = requests.get(url)
         first = response.json()
 
@@ -32,7 +29,7 @@ def depositProductsSearch():
 
         if max_page > 1:
             for page in range(2, max_page + 1):
-                url = f"https://finlife.fss.or.kr/finlifeapi/depositProductsSearch.json?auth={FSS_API_KEY}&topFinGrpNo={no}&pageNo={page}"
+                url = make_url("deposit", FSS_API_KEY, no, page)
                 response = requests.get(url)
                 js = response.json()
                 base_rows.extend(js['result'].get('baseList', []))
@@ -68,7 +65,7 @@ def savingProductsSearch():
     topFinGrpNo = ["020000", "030200", "030300", "050000", "060000",]
 
     for no in topFinGrpNo:
-        url = make_savingProductsSearch_url(FSS_API_KEY, no, 1)
+        url = make_url("saving", FSS_API_KEY, no, 1)
         response = requests.get(url)
         first = response.json()
 
@@ -80,7 +77,7 @@ def savingProductsSearch():
 
         if max_page > 1:
             for page in range(2, max_page + 1):
-                url = make_savingProductsSearch_url(FSS_API_KEY, no, page)
+                url = make_url("saving", FSS_API_KEY, no, page)
                 response = requests.get(url)
                 js = response.json()
                 base_rows.extend(js['result'].get('baseList', []))
