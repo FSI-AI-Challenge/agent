@@ -225,8 +225,9 @@ def load_profile(state:GraphState) -> GraphState:
     response = llm.invoke(prompt)
     print(response)
     data = json.loads(response.content)
+    print(json.dumps(data, indent=2, ensure_ascii=False))
 
-    print("사용자 수입 및 지출 계산 종료")
+    print(f"사용자 수입 및 지출 계산 종료: {data}")
     return GraphState(
         investable_amount=data["investable_amount"]
     )
@@ -322,6 +323,7 @@ graph.add_node("start", start)
 graph.add_node("chatbot", chatbot)
 graph.add_node("get_goal", get_goal)
 graph.add_node("load_profile", load_profile)
+graph.add_node("hitl_confirm_input", hitl_confirm_input)
 graph.add_node("get_percent", get_percent)
 graph.add_node("retrieve_products", retrieve_products)
 graph.add_node("select_products", select_products)
