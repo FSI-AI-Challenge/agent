@@ -111,9 +111,6 @@ class RebalancePlan:
 @dataclass
 class NewsSignal:
     ticker: str
-    headline: str
-    url: str
-    published_at: str                      # ISO8601
     summary: str
     sentiment: Sentiment
     decision: NewsDecision | None = None   # 판단 결과
