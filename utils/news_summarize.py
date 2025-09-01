@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from enum import Enum
 from email.utils import parsedate_to_datetime
 
-from state import (
+from FSI.utils.state import (
     GraphState, NewsSignal, Sentiment, append_news_signals, initial_state
 )
 
