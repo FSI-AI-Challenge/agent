@@ -5,6 +5,23 @@ import numpy as np
 from dateutil.relativedelta import relativedelta
 from datetime import datetime, timedelta
 
+import re, json
+from typing import Dict, Any
+
+
+def extract_json(text: str) -> Dict[str, Any]:
+    # ```json ... ``` 블록 우선 추출 → 실패 시 중괄호 첫/끝 매칭
+    codeblock = re.search(r"```json\s*(\{.*?\})\s*```", text, re.S)
+    if codeblock:
+        text = codeblock.group(1)
+    else:
+        # 가장 바깥 {} 추정
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            text = text[start:end+1]
+    return json.loads(text)
+
 # 1) 한글 종목명 → 야후 파이낸스 티커 매핑 (예시, 필요 시 추가)
 NAME_TO_TICKER = {
     "삼성전자": "005930.KS",

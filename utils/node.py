@@ -1,7 +1,12 @@
 from datetime import datetime, timedelta, timezone
-from utils.state import GraphState, Goal
+from utils.state import *
 import json
+
 from main import llm, interrupt
+from utils.state import *
+from utils.tools import *
+
+from langchain_core.messages import SystemMessage, HumanMessage
 
 def start(state:GraphState) -> GraphState:
     return GraphState()
@@ -130,13 +135,67 @@ def hitl_confirm_input(state:GraphState) -> GraphState:
 def get_percent(state:GraphState):
     return GraphState()
 
-def retrieve_products(state:GraphState):
+def retrieve_deposit_products(state:GraphState):
+    financial_products = pd.read_csv('../data/financial_products.csv')
+
+    top_5_products = financial_products[financial_products["save_trm"]<=12].sort_values("intr_rate", ascending=False).head(5)
+
+    top_5_products = top_5_products[["kor_co_nm", "fin_prdt_nm", "max_limit", "intr_rate_type_nm", "save_trm", "intr_rate"]].to_dict(orient='records')
+
+    system = SystemMessage(content=(
+        "너는 예금/적금 상품 전문가야. "
+        "아래 후보 중 '금리가 높고' 그리고 'etc_notes에 우대/혜택이 있는' 상품을 1개 고른다. "
+        "같은 금리라면 복리 우선, 우대조건(우대금리, 자동이체, 급여이체, 비대면/모바일, 주거래, 청년, 마이데이터, 세금우대 등) 있으면 가점. "
+        "최종 출력은 오직 JSON 한 개 객체만. 다른 텍스트 금지."
+    ))
+    user = HumanMessage(content=(
+        "후보 리스트는 다음과 같아:\n"
+        f"{json.dumps(top_5_products, ensure_ascii=False, indent=2)}\n\n"
+        "아래 JSON 스키마에 정확히 맞춰 1개만 반환해줘.\n"
+        "스키마: {\n"
+        '  "kor_co_nm": str,\n'
+        '  "fin_prdt_nm": str,\n'
+        '  "max_limit": int,\n'
+        '  "intr_rate_type_nm": "단리" | "복리",\n'
+        '  "save_trm": int,\n'
+        '  "intr_rate": float,\n'
+        '  "etc_notes": str | null\n'
+        "}\n"
+        "반드시 키 이름/타입을 정확히 지켜줘."
+    ))
+
+    resp = llm.invoke([system, user])
+    picked_raw = extract_json(resp.content)
+
+    def _to_int(v): 
+        return int(v) if v is not None and str(v).strip() != "" else 0
+    def _to_float(v):
+        return float(v) if v is not None and str(v).strip() != "" else 0.0
+    def _to_str(v):
+        return None if v is None else str(v)
+
+    selected = SelectedFinPrdt(
+        kor_co_nm=_to_str(picked_raw.get("kor_co_nm", "")) or "",
+        fin_prdt_nm=_to_str(picked_raw.get("fin_prdt_nm", "")) or "",
+        max_limit=_to_int(picked_raw.get("max_limit", 0)),
+        intr_rate_type_nm=_to_str(picked_raw.get("intr_rate_type_nm", "")) or "",
+        save_trm=_to_int(picked_raw.get("save_trm", 0)),
+        intr_rate=_to_float(picked_raw.get("intr_rate", 0.0)),
+        etc_notes=_to_str(picked_raw.get("etc_notes", None)),
+    )
+
+    return {**state, "selected_fin_prdt": selected}
+
+def select_deposit_products(state:GraphState):
     return GraphState()
 
-def select_products(state:GraphState):
+def retrieve_stock_products(state:GraphState):
     return GraphState()
 
-def build_indicates(state:GraphState):
+def select_stock_products(state:GraphState):
+    return GraphState()
+
+def build_indicators(state:GraphState):
     return GraphState()
 
 def build_portfolios(state:GraphState):
