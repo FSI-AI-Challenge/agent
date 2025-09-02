@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from collections import defaultdict
 from utils.state import *
 import json
 from langgraph.types import interrupt
@@ -72,49 +73,59 @@ def load_profile(state:GraphState) -> GraphState:
         user_profile = json.load(f)
 
     ts = datetime.fromisoformat(state["created_ts"])
-    current_year = ts.year
-    current_month = ts.month
+    recent_keys = [(ts - relativedelta(months=i)).strftime("%Y-%m") for i in range(1, 4)]
+    months = [m for m in user_profile["months"] if m["month"] in recent_keys]
 
-    recent_months = []
-    for i in range(3):
-        month = (current_month - i - 1) % 12 + 1
-        year = current_year if current_month - i > 0 else current_year - 1
-        recent_months.append(f"{year}-{month:02d}")
+    unique_pairs = sorted({(d["payee"], d["type"].upper()) for m in months for d in m["days"]})
+    items_for_llm = [{"payee": p, "direction": t} for (p, t) in unique_pairs]
 
-    recent_months = set(recent_months)
+    template = """
+        You are a strict finance transaction labeler.
 
-    filtered_months = [
-        m for m in user_profile["months"] if m["month"] in recent_months
-    ]
+        For each item, classify into EXACTLY one category based on its direction:
 
-    template = '''
-        You are an assistant that analyzes personal finance transaction data.
+        - If direction == "INCOME":
+            choose one of: ["FIXED_INCOME", "OTHER"]
+            (salary/wages/regular payroll/interest/dividends → FIXED_INCOME)
 
-        Tasks:
-        1) Identify the average fixed income per month.
-        2) Identify the average fixed expenses per month.
-        3) Identify the average variable expenses per month.
-        4) Compute the average investable amount per month = fixed_income - (fixed_expenses + variable_expenses).
+        - If direction == "EXPENSE":
+            choose one of: ["FIXED_EXPENSE", "VARIABLE_EXPENSE", "OTHER"]
+            (rent/insurance/telecom/utilities/loan/subscription → FIXED_EXPENSE;
+            food/shopping/entertainment/transport/leisure → VARIABLE_EXPENSE)
 
-        Return ONLY valid JSON, no markdown, no code block. 
-        Keys:
-        - fixed_income (int)
-        - fixed_expenses (int)
-        - variable_expenses (int)
-        - investable_amount (int)
+        Do NOT infer direction yourself; use the provided "direction".
 
-        User Input:
-        {}
-    '''
-    prompt = template.format(filtered_months)
+        Return ONLY valid JSON array like:
+        [
+        {{"payee":"청계하우스","category":"FIXED_EXPENSE"}},
+        {{"payee":"ABC주식회사","category":"FIXED_INCOME"}}
+        ]
 
+        Items to classify:
+        {items}
+    """
+    prompt = template.format(items=json.dumps(items_for_llm, ensure_ascii=False))
     response = llm.invoke(prompt)
-    print(response)
     data = json.loads(response.content)
+    mapping = {x["payee"]: x["category"] for x in data}
 
-    print(f"사용자 수입 및 지출 계산 종료: {data}")
+    sums = defaultdict(int)
+    for m in months:
+        for d in m["days"]:
+            cat = mapping.get(d["payee"], "OTHER")
+            amt = d["amount"]
+            if d["type"] == "income":
+                sums[cat] += amt
+            elif d["type"] == "expense":
+                sums[cat] -= amt
+
+    fixed_income = sums["FIXED_INCOME"] // len(months)
+    fixed_expenses = abs(sums["FIXED_EXPENSE"]) // len(months)
+    variable_expenses = abs(sums["VARIABLE_EXPENSE"]) // len(months)
+    investable_amount = fixed_income - (fixed_expenses + variable_expenses)
+    print(f"사용자 수입 및 지출 계산 종료: {investable_amount}")
     return GraphState(
-        investable_amount=data["investable_amount"]
+        investable_amount=investable_amount
     )
 
 def hitl_confirm_input(state:GraphState) -> GraphState:

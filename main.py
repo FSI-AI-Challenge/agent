@@ -11,8 +11,6 @@ from utils.node import *
 from utils.state import *
 from utils.tools import *
 
-llm = ChatOllama(model='gpt-oss:20b', streaming=True)
-
 graph = StateGraph(GraphState)
 
 graph.add_node("planner", planner)
