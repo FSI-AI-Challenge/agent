@@ -1,10 +1,30 @@
 from datetime import datetime, timedelta, timezone
 from utils.state import GraphState, Goal
 import json
-from main import llm, interrupt
+from langgraph.types import interrupt
+from main import llm
 
-def start(state:GraphState) -> GraphState:
-    return GraphState()
+def planner(state:GraphState) -> GraphState:
+    print("서비스 판단 시작")
+    question = state['question']
+
+    prompt = f'''
+        You are a routing agent that decides the next step in a workflow.  
+
+        Decide which node to go to next based on the user input.  
+        You MUST choose exactly one of the following nodes:
+        - "get_goal": when the user is asking about our financial planning / savings / investment service.
+        - "chatbot": when the user is making a general request or any query not related to our service.
+
+        User Input:
+        {question}
+
+        Return ONLY node name:
+        "get_goal" or "chatbot"
+    '''
+    response = llm.invoke(prompt)
+    print(f"서비스 판단 종료: {response.content}")
+    return GraphState(route=response.content)
 
 def chatbot(state:GraphState) -> GraphState:
     print("챗봇 시작")
@@ -84,7 +104,6 @@ def load_profile(state:GraphState) -> GraphState:
     response = llm.invoke(prompt)
     print(response)
     data = json.loads(response.content)
-    print(json.dumps(data, indent=2, ensure_ascii=False))
 
     print(f"사용자 수입 및 지출 계산 종료: {data}")
     return GraphState(
@@ -114,9 +133,6 @@ def hitl_confirm_input(state:GraphState) -> GraphState:
     target_amount = int(decision.get("target_amount", proposed["target_amount"]))
     target_months = int(decision.get("target_months", proposed["target_months"]))
     investable_amount = int(decision.get("investable_amount", proposed["investable_amount"]))
-
-    if target_amount < 0 or target_months < 0 or investable_amount < 0:
-        raise ValueError("입력 값이 유효하지 않습니다.")
 
     print(f"사용자 입력 검증 종료: {target_amount, target_months, investable_amount}")
     return GraphState(
@@ -153,20 +169,6 @@ def analyze_sentiment(state:GraphState):
 
 def evaluate_rebalance(state:GraphState):
     return GraphState()
-
-def is_our_service(state:GraphState) -> str:
-    print("서비스 판단 시작")
-    question = state['question']
-
-    prompt = f'''
-        You are a classifier. Decide whether the user's message expresses intent to use a savings or investment guidance service.
-        Answer only yes or no.
-
-        User Input: {question}
-    '''
-    response = llm.invoke(prompt)
-    print(f"서비스 판단 종료: {response.content}")
-    return response.content
 
 def is_goal_reached(state:GraphState):
     return "yes"

@@ -1,24 +1,21 @@
 from langchain_core.runnables import RunnableConfig
-from langchain_teddynote.messages import invoke_graph, stream_graph, random_uuid
+from langchain_teddynote.messages import random_uuid
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import StateGraph, add_messages, END
-from langgraph.types import interrupt, Command
+from langgraph.graph import StateGraph, END
 from langchain_ollama import ChatOllama
-
-from typing import Annotated, Dict, List, Optional, Tuple, TypedDict
-from dataclasses import dataclass, field
-from enum import Enum
+from langgraph.prebuilt import ToolNode
 
 from datetime import datetime, timezone, timedelta
 
 from utils.node import *
 from utils.state import *
+from utils.tools import *
 
-llm = ChatOllama(model='gpt-oss:20b')
+llm = ChatOllama(model='gpt-oss:20b', streaming=True)
 
 graph = StateGraph(GraphState)
 
-graph.add_node("start", start)
+graph.add_node("planner", planner)
 graph.add_node("chatbot", chatbot)
 graph.add_node("get_goal", get_goal)
 graph.add_node("load_profile", load_profile)
@@ -33,13 +30,13 @@ graph.add_node("summarize_news", summarize_news)
 graph.add_node("analyze_sentiment", analyze_sentiment)
 graph.add_node("evaluate_rebalance", evaluate_rebalance)
 
-graph.set_entry_point("start")
+graph.set_entry_point("planner")
 graph.add_conditional_edges(
-    "start",
-    is_our_service,
+    "planner",
+    lambda s: s.get("route", "chatbot"),
     {
-        "yes":"get_goal",
-        "no":"chatbot"
+        "get_goal":"get_goal",
+        "chatbot":"chatbot"
     }
 )
 graph.add_edge("get_goal", "load_profile")

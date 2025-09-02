@@ -5,7 +5,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Annotated, Dict, List, Optional, Tuple, TypedDict
 
-from langchain_core.messages import AnyMessage
 from langgraph.graph import add_messages
 
 
@@ -119,6 +118,8 @@ class GraphState(TypedDict):
     question:str
     answer:str
     
+    route:str
+
     # 대화/프론트 단계
     ui_step: UIStep
 
