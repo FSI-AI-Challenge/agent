@@ -57,7 +57,7 @@ def depositProductsSearch():
         df.loc[mask, 'join_deny'] = df.loc[mask, 'join_deny'].astype(str).map(JOIN_DENY_MAP).fillna(df.loc  [mask, 'join_deny'])
 
         # CSV 저장
-        df.to_csv(f"./data/예금/{no}.csv", index=False, encoding="utf-8-sig")
+        df.to_csv(f"../data/예금/{no}.csv", index=False, encoding="utf-8-sig")
         print(f"[{no}] 저장 완료: {len(df)} rows")
 
 def savingProductsSearch():
@@ -105,7 +105,7 @@ def savingProductsSearch():
         df.loc[mask, 'join_deny'] = df.loc[mask, 'join_deny'].astype(str).map(JOIN_DENY_MAP).fillna(df.loc[mask, 'join_deny'])
 
         # CSV 저장
-        df.to_csv(f"./data/적금/{no}.csv", index=False, encoding="utf-8-sig")
+        df.to_csv(f"../data/적금/{no}.csv", index=False, encoding="utf-8-sig")
         print(f"[{no}] 저장 완료: {len(df)} rows")
 
 if __name__ == "__main__":

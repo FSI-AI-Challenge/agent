@@ -32,11 +32,6 @@ class NewsDecision(str, Enum):
     REVIEW = "review"      # 재검토(추가 분석 필요)
     RECOMMEND_REFRESH = "recommend_refresh"  # 추천 알고리즘 다시 시작
 
-class RiskLevel(str, Enum):
-    LOW = "low"
-    MID = "mid"
-    HIGH = "high"
-
 class SourceType(str, Enum):
     STOCK = "stock"
     ETF = "etf"
@@ -56,30 +51,23 @@ class IncomeExpense:
     fixed_expense: int                   # 고정지출(월)
 
 @dataclass
-class Product:
-    ticker: str
-    name: str
-    source_type: SourceType
-    risk: RiskLevel
-    metadata: Dict[str, str] = field(default_factory=dict)  # ex) 섹터, 지역 등
+class SelectedFinPrdt:
+    kor_co_nm: str
+    fin_prdt_nm: str
+    max_limit: int
+    intr_rate_type_nm: str # 단리, 복리
+    fin_type: str           # 예금, 적금
+    save_trm: int
+    intr_rate: float
+    etc_notes: Optional[str] = None
 
-@dataclass
-class AllocationItem:
-    product: Product
-    weight: float                          # 포트폴리오 내 비중 (0~1)
-    expected_return_yr: float | None = None
-    expected_vol_yr: float | None = None
-    notes: str | None = None
-
-@dataclass
-class Portfolio:
-    id: str                                # "alloc_30", "alloc_50", "alloc_70" 등
-    items: List[AllocationItem]
-    investable_amount: float               # 금액 기준
-    expected_return_yr: float | None = None
-    expected_vol_yr: float | None = None
-    risk_level: RiskLevel | None = None
-    explanation: str | None = None
+class SelectedStockPrdt:
+    kor_co_nm: str
+    fin_prdt_nm: str
+    max_limit: int
+    intr_rate_type_nm: str # 단리, 복리
+    save_trm: int
+    intr_rate: float
 
 @dataclass
 class RebalanceAction:
@@ -87,6 +75,16 @@ class RebalanceAction:
     to_ticker: str
     amount: float                          # 원화 금액(+/-)
     reason: str
+
+@dataclass
+class Portfolio:
+    ticker: str
+    name: str
+    source_type: SourceType
+    target_percent: float                  # 목표 비중(%)
+    current_percent: float                 # 현재 비중(%)
+    current_value: float                   # 현재 평가액(원)
+    notes: Optional[str] = None            # 비고/설명
 
 @dataclass
 class RebalancePlan:
@@ -121,12 +119,14 @@ class GraphState(TypedDict):
     route:str
 
     # 대화/프론트 단계
-    ui_step: UIStep
+    ui_step: UIStep    
 
     # 입력/프로필
     goal: Goal
     investable_amount: int
-    risk_preference: RiskLevel | None             # 마음 물어보기 결과를 리스크로 맵핑
+
+    selected_fin_prdt: SelectedFinPrdt
+    selected_stock_prdt: SelectedStockPrdt
 
     # RAG/추천
     rag_trace: RAGTrace
@@ -154,6 +154,7 @@ def initial_state() -> GraphState:
         ui_step=UIStep.INPUT_GOAL,
         messages=[],
         events=[],
+        selected_fin_prdt=None,
         news_signals=[],
     )
 
