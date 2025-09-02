@@ -2,7 +2,11 @@ from datetime import datetime, timedelta, timezone
 from utils.state import *
 import json
 
-from main import llm, interrupt
+from langgraph.types import interrupt
+from langchain_ollama import ChatOllama
+
+llm = ChatOllama(model='gpt-oss:20b')
+
 from utils.state import *
 from utils.tools import *
 
@@ -135,22 +139,24 @@ def hitl_confirm_input(state:GraphState) -> GraphState:
 def get_percent(state:GraphState):
     return GraphState()
 
-def retrieve_deposit_products(state:GraphState):
-    financial_products = pd.read_csv('../data/financial_products.csv')
+def select_fin_prdt(state:GraphState):
+    financial_products = pd.read_csv('./data/financial_products.csv')
 
-    top_5_products = financial_products[financial_products["save_trm"]<=12].sort_values("intr_rate", ascending=False).head(5)
+    top_10_products = financial_products[financial_products["save_trm"]<=state["goal"].target_months].sort_values("intr_rate", ascending=False).head(10)
 
-    top_5_products = top_5_products[["kor_co_nm", "fin_prdt_nm", "max_limit", "intr_rate_type_nm", "save_trm", "intr_rate"]].to_dict(orient='records')
+    top_10_products = top_10_products[["kor_co_nm", "fin_prdt_nm", "max_limit", "intr_rate_type_nm", "save_trm", "intr_rate", "etc_note", "label"]].to_dict(orient='records')
 
     system = SystemMessage(content=(
         "너는 예금/적금 상품 전문가야. "
-        "아래 후보 중 '금리가 높고' 그리고 'etc_notes에 우대/혜택이 있는' 상품을 1개 고른다. "
-        "같은 금리라면 복리 우선, 우대조건(우대금리, 자동이체, 급여이체, 비대면/모바일, 주거래, 청년, 마이데이터, 세금우대 등) 있으면 가점. "
+        "아래 후보 중 '금리가 높고', 그리고 '사용자의 목표 기간(state[\"goal\"].target_months)과 가장 가까운 상품'을 1개 고른다. "
+        "같은 금리라면 복리 우선, 그리고 etc_notes에 이상하거나 부적절한 내용(예: 없음, 불명확, 혜택 없음 등)이 없는 상품을 선택한다. "
+        "우대조건(우대금리, 자동이체, 급여이체, 비대면/모바일, 주거래, 청년, 마이데이터, 세금우대 등)이 있으면 가점. "
         "최종 출력은 오직 JSON 한 개 객체만. 다른 텍스트 금지."
+        "비어있는 값은 null로 채워고, 비어있는 값을 절대 임의로 채우지마 etc_notes에는 원본 그대로 넣어줘"
     ))
     user = HumanMessage(content=(
         "후보 리스트는 다음과 같아:\n"
-        f"{json.dumps(top_5_products, ensure_ascii=False, indent=2)}\n\n"
+        f"{json.dumps(top_10_products, ensure_ascii=False, indent=2)}\n\n"
         "아래 JSON 스키마에 정확히 맞춰 1개만 반환해줘.\n"
         "스키마: {\n"
         '  "kor_co_nm": str,\n'
@@ -160,6 +166,7 @@ def retrieve_deposit_products(state:GraphState):
         '  "save_trm": int,\n'
         '  "intr_rate": float,\n'
         '  "etc_notes": str | null\n'
+        '  "label": str | null\n'
         "}\n"
         "반드시 키 이름/타입을 정확히 지켜줘."
     ))
@@ -182,18 +189,15 @@ def retrieve_deposit_products(state:GraphState):
         save_trm=_to_int(picked_raw.get("save_trm", 0)),
         intr_rate=_to_float(picked_raw.get("intr_rate", 0.0)),
         etc_notes=_to_str(picked_raw.get("etc_notes", None)),
+        fin_type=_to_str(picked_raw.get("label", None)),
     )
 
     return {**state, "selected_fin_prdt": selected}
 
-def select_deposit_products(state:GraphState):
-    return GraphState()
-
-def retrieve_stock_products(state:GraphState):
-    return GraphState()
-
 def select_stock_products(state:GraphState):
-    return GraphState()
+
+
+    return {**state, "selected_stock_prdt": None}
 
 def build_indicators(state:GraphState):
     return GraphState()

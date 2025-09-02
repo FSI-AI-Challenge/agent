@@ -57,6 +57,7 @@ class SelectedFinPrdt:
     fin_prdt_nm: str
     max_limit: int
     intr_rate_type_nm: str # 단리, 복리
+    fin_type: str           # 예금, 적금
     save_trm: int
     intr_rate: float
     etc_notes: Optional[str] = None
@@ -75,6 +76,16 @@ class RebalanceAction:
     to_ticker: str
     amount: float                          # 원화 금액(+/-)
     reason: str
+
+@dataclass
+class Portfolio:
+    ticker: str
+    name: str
+    source_type: SourceType
+    target_percent: float                  # 목표 비중(%)
+    current_percent: float                 # 현재 비중(%)
+    current_value: float                   # 현재 평가액(원)
+    notes: Optional[str] = None            # 비고/설명
 
 @dataclass
 class RebalancePlan:
@@ -113,6 +124,9 @@ class GraphState(TypedDict):
     goal: Goal
     investable_amount: int
 
+    selected_fin_prdt: SelectedFinPrdt
+    selected_stock_prdt: SelectedStockPrdt
+
     # RAG/추천
     rag_trace: RAGTrace
     candidate_portfolios: List[Portfolio]         # 30/50/70% 후보
@@ -139,6 +153,7 @@ def initial_state() -> GraphState:
         ui_step=UIStep.INPUT_GOAL,
         messages=[],
         events=[],
+        selected_fin_prdt=None,
         news_signals=[],
     )
 
