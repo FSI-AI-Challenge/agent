@@ -164,10 +164,20 @@ def hitl_confirm_input(state:GraphState) -> GraphState:
 def get_percent(state:GraphState):
     return GraphState()
 
+def _to_int(v): 
+    return int(v) if v is not None and str(v).strip() != "" else 0
+def _to_float(v):
+    return float(v) if v is not None and str(v).strip() != "" else 0.0
+def _to_str(v):
+    return None if v is None else str(v)
+
 def select_fin_prdt(state:GraphState):
     financial_products = pd.read_csv('./data/financial_products.csv')
 
-    top_10_products = financial_products[financial_products["save_trm"]<=state["goal"].target_months].sort_values("intr_rate", ascending=False).head(10)
+    top_10_products = financial_products[
+    (financial_products["save_trm"] <= state["goal"].target_months) &
+    ((financial_products["max_limit"] > state["investable_amount"]) & (financial_products["label"] == "적금"))
+].sort_values("intr_rate", ascending=False).head(10)
 
     top_10_products = top_10_products[["kor_co_nm", "fin_prdt_nm", "max_limit", "intr_rate_type_nm", "save_trm", "intr_rate", "etc_note", "label"]].to_dict(orient='records')
 
@@ -199,13 +209,6 @@ def select_fin_prdt(state:GraphState):
     resp = llm.invoke([system, user])
     picked_raw = extract_json(resp.content)
 
-    def _to_int(v): 
-        return int(v) if v is not None and str(v).strip() != "" else 0
-    def _to_float(v):
-        return float(v) if v is not None and str(v).strip() != "" else 0.0
-    def _to_str(v):
-        return None if v is None else str(v)
-
     selected = SelectedFinPrdt(
         kor_co_nm=_to_str(picked_raw.get("kor_co_nm", "")) or "",
         fin_prdt_nm=_to_str(picked_raw.get("fin_prdt_nm", "")) or "",
@@ -220,9 +223,70 @@ def select_fin_prdt(state:GraphState):
     return {**state, "selected_fin_prdt": selected}
 
 def select_stock_products(state:GraphState):
+    top_20_products = pd.read_csv('./data/krx_top100_rate_risk.csv')
+    top_20_products = top_20_products.sort_values("rate", ascending=False).head(20).to_dict(orient='records')
 
+    system = SystemMessage(content=(
+        "너는 주식 상품 전문가야. "
+        "아래 후보 중 '수익률이 높고', 그리고 '리스크가 낮은 상품'을 1개 고른다. "
+        "최종 출력은 오직 JSON 배열만. 다른 텍스트 금지."
+        "비어있는 값은 null로 채워고, 비어있는 값을 절대 임의로 채우지마"
+    ))
+    user = HumanMessage(content=(
+        "후보 리스트는 다음과 같아:\n"
+        f"{json.dumps(top_20_products, ensure_ascii=False, indent=2)}\n\n"
+        "아래 JSON 스키마에 정확히 맞춰 1개만 반환해줘.\n"
+        "스키마: {\n"
+        '  "Name": str,\n'
+        '  "rate": float,\n'
+        '  "risk": float,\n'
+        '  "risk_pct": float | null\n'
+        '}\n'
+        "반드시 키 이름/타입을 정확히 지켜줘."
+    ))
 
-    return {**state, "selected_stock_prdt": None}
+    resp = llm.invoke([system, user])
+    picked_raw = extract_json(resp.content)
+
+    selected = SelectedStockPrdt(
+        kor_co_nm=_to_str(picked_raw.get("Name", "")) or "",
+        rate=_to_float(picked_raw.get("rate", 0.0)),
+        risk=_to_float(picked_raw.get("risk", 0.0)),
+        risk_pct=_to_float(picked_raw.get("risk_pct", 0.0))
+    )
+
+    return {**state, "selected_stock_prdt": selected}
+
+def calculate_plan(state:GraphState):
+    fin = state["selected_fin_prdt"]
+    stock = state["selected_stock_prdt"]
+    months = state["goal"].target_months
+    investable = state["investable_amount"]
+
+    savings_final = calculate_savings_final_amount(
+        monthly_deposit=investable,
+        intr_rate=fin.intr_rate,
+        intr_rate_type=fin.intr_rate_type_nm,
+        save_trm=months
+    )
+    stock_final = calculate_stock_return(
+        invest_amount=investable,
+        rate=stock.rate / 100,  # % -> 소수
+        months=months
+    )
+    total_final = savings_final + stock_final
+
+    plan = {
+        "savings_final": savings_final,
+        "stock_final": stock_final,
+        "total_final": total_final,
+        "goal_amount": state["goal"].target_amount,
+        "goal_months": months,
+        "investable_per_month": investable,
+        "fin_prdt": fin,
+        "stock_prdt": stock
+    }
+    return {**state, "plan": plan}
 
 def build_indicators(state:GraphState):
     return GraphState()

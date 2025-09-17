@@ -4,9 +4,9 @@ import pandas as pd
 import numpy as np
 from dateutil.relativedelta import relativedelta
 from datetime import datetime, timedelta
-
+import FinanceDataReader as fdr
 import re, json
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 
 
 def extract_json(text: str) -> Dict[str, Any]:
@@ -22,16 +22,6 @@ def extract_json(text: str) -> Dict[str, Any]:
             text = text[start:end+1]
     return json.loads(text)
 
-# 1) 한글 종목명 → 야후 파이낸스 티커 매핑 (예시, 필요 시 추가)
-NAME_TO_TICKER = {
-    "삼성전자": "005930.KS",
-    "NAVER": "035420.KS",
-    "카카오": "035720.KS",
-    "현대차": "005380.KS",
-    "LG에너지솔루션": "373220.KS",
-    # ... 원하시는 종목 계속 추가
-}
-
 def get_month_window(today=None):
     """야후 휴장일을 감안해 최근 거래일 기반 윈도우를 확보합니다."""
     if today is None:
@@ -40,32 +30,79 @@ def get_month_window(today=None):
     end = today + timedelta(days=1)                              # 오늘 포함
     return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
 
-def compute_rate_and_risk(names, name_to_ticker=NAME_TO_TICKER):
+def _krx_code_to_yahoo_ticker(row: pd.Series) -> Tuple[str, str]:
     """
-    입력: ['삼성전자', 'NAVER', ...]
+    KRX 종목코드 → 야후 파이낸스 티커 변환
+    - 코스피: .KS
+    - 코스닥: .KQ
+    """
+    code = str(row["Code"]).zfill(6)
+    market = str(row.get("Market", "KOSPI")).upper()
+    if "KOSDAQ" in market:
+        suffix = ".KQ"
+    else:
+        suffix = ".KS"
+    return code, f"{code}{suffix}"
+
+def fetch_top100_krx_by_marketcap() -> Dict[str, str]:
+    """
+    KRX 상장사 전체에서 시가총액 상위 100개 종목을 가져와
+    {종목명: 야후티커} dict로 반환합니다.
+    - FinanceDataReader의 상장사 목록: Code, Name, Market, MarketCap 등
+    """
+    # 상장사 리스트
+    listed = fdr.StockListing("KRX")
+
+    # 시총 컬럼명 방어적 처리 (FinanceDataReader 버전에 따라 다를 수 있음)
+    # 보통 'Marcap' 또는 'MarketCap' 형태가 제공됩니다.
+    marcap_col_candidates = [c for c in listed.columns if c.lower() in ("marcap", "marketcap", "market_cap", "mktcap")]
+    if not marcap_col_candidates:
+        raise ValueError("시가총액 컬럼을 찾을 수 없습니다. FinanceDataReader 버전을 확인해주세요.")
+    marcap_col = marcap_col_candidates[0]
+
+    # 결측 제거 후 시총 순 정렬
+    df_top = (
+        listed.dropna(subset=[marcap_col, "Code", "Name"])
+              .sort_values(by=marcap_col, ascending=False)
+              .head(100)
+              .reset_index(drop=True)
+    )
+
+    # 야후 티커 생성
+    df_top[["KRXCode", "YahooTicker"]] = df_top.apply(_krx_code_to_yahoo_ticker, axis=1, result_type="expand")
+
+    # 이름→티커 dict
+    name_to_ticker = dict(zip(df_top["Name"], df_top["YahooTicker"]))
+    return name_to_ticker
+
+def compute_rate_and_risk_from_tickers(name_to_ticker: Dict[str, str]) -> Dict[str, Dict[str, float]]:
+    """
+    입력: { '삼성전자': '005930.KS', ... }
     출력: {
-      "삼성전자": {"rate": float(수익률), "risk": float(최고-최저), "risk_pct": float(%)},
+      "삼성전자": {"rate": float, "risk": float, "risk_pct": float},
       ...
     }
     """
     start, end = get_month_window()
-    result = {}
+    result: Dict[str, Dict[str, float]] = {}
 
-    # 이름→티커 변환
-    missing = [n for n in names if n not in name_to_ticker]
-    if missing:
-        # 매핑 누락 종목은 스킵 또는 직접 티커 넣을 수 있게 알림
-        for n in missing:
-            result[n] = {"error": "티커 매핑 없음 (NAME_TO_TICKER에 추가 필요)"}
-
-    tickers = [name_to_ticker[n] for n in names if n in name_to_ticker]
-    if not tickers:
+    if not name_to_ticker:
         return result
 
-    # 2) 가격 데이터 수집 (일봉)
-    df = yf.download(tickers, start=start, end=end, interval="1d", auto_adjust=False, threads=True, group_by='ticker', progress=False)
+    tickers = list(name_to_ticker.values())
+    # yfinance에서 대량 종목 다운로드
+    df = yf.download(
+        tickers,
+        start=start,
+        end=end,
+        interval="1d",
+        auto_adjust=False,
+        threads=True,
+        group_by="ticker",
+        progress=False
+    )
 
-    # 단일/다중 티커 모두 처리
+    # 단일/다중 티커 모두 처리 가능한 helper
     def get_series(tk, col):
         if isinstance(df.columns, pd.MultiIndex):
             return df[(tk, col)].dropna()
@@ -73,34 +110,24 @@ def compute_rate_and_risk(names, name_to_ticker=NAME_TO_TICKER):
             # 단일 티커인 경우
             return df[col].dropna()
 
-    # 3) 종목별 계산
-    for name in names:
-        tk = name_to_ticker.get(name)
-        if not tk:
-            continue
-
+    for name, tk in name_to_ticker.items():
         try:
             close = get_series(tk, "Close")
-            high = get_series(tk, "High")
-            low  = get_series(tk, "Low")
+            high  = get_series(tk, "High")
+            low   = get_series(tk, "Low")
 
             if close.empty or high.empty or low.empty:
                 result[name] = {"error": "가격 데이터 부족"}
                 continue
 
-            # 가장 이른 날(=한 달 전 근처)과 가장 최근 거래일의 종가
             first_close = close.iloc[0]
             last_close  = close.iloc[-1]
 
-            # 수익률
             rate = float((last_close / first_close) - 1)
 
-            # 위험도: 한 달 동안의 (최고 - 최저)
             month_high = float(high.max())
             month_low  = float(low.min())
             risk_abs = month_high - month_low
-
-            # 퍼센트 스프레드(선택): 기준을 "한 달 전 종가"로
             risk_pct = float(risk_abs / first_close)
 
             result[name] = {
@@ -113,66 +140,62 @@ def compute_rate_and_risk(names, name_to_ticker=NAME_TO_TICKER):
 
     return result
 
-def monthly_contribution(target_fv: float,
-                         annual_rate_percent: float,
-                         months: int,
-                         interest_type: str = "compound",   # "compound"(복리) or "simple"(단리)
-                         payment_timing: str = "end"         # "end"(후불식) or "begin"(선불식, 선택)
-                         ) -> float:
+def calculate_savings_final_amount(monthly_deposit: float, intr_rate: float, intr_rate_type: str, save_trm: int) -> float:
     """
-    반환값: 매월 납입해야 할 금액 (원)
-    - target_fv: 목표 최종 금액 (원)
-    - annual_rate_percent: 연 수익률(%) 예: 6 -> 6%
-    - months: 기간(개월)
-    - interest_type: "compound"(복리) 또는 "simple"(단리)
-    - payment_timing: "end"(후불식, 기본) 또는 "begin"(선불식)
+    적금(월별 납입) 만기 시 수령액 계산
+    - monthly_deposit: 월별 납입액(원)
+    - intr_rate: 연이율(%)
+    - intr_rate_type: "단리" or "복리"
+    - save_trm: 적립 기간(개월)
     """
-    if months <= 0:
-        raise ValueError("months는 1 이상이어야 합니다.")
-    if target_fv < 0:
-        raise ValueError("목표 금액은 음수일 수 없습니다.")
-    i_annual = annual_rate_percent / 100.0
-    r = i_annual / 12.0  # 월 이율
+    n = save_trm
+    r = intr_rate / 100 / 12  # 월이율
 
-    # 무이자 처리
-    if abs(r) < 1e-12:
-        return target_fv / months
-
-    interest_type = interest_type.lower()
-    payment_timing = payment_timing.lower()
-
-    if interest_type == "compound":
-        # 복리(월 복리) - 연금종가치(적립식) 공식
-        # FV = A * [((1+r)^n - 1) / r]          (후불식, end)
-        # 선불식(begin)은 FV = A * [((1+r)^n - 1) / r] * (1+r)
-        factor = ((1 + r)**months - 1) / r
-        if payment_timing == "begin":
-            factor *= (1 + r)
-        A = target_fv / factor
-
-    elif interest_type == "simple":
-        # 단리(월 단리) - 각 납입금은 남은 개월 수만큼 선형 이자
-        # 후불식(end)에서 FV = A * sum_{k=0}^{n-1} (1 + r*k)
-        #   = A * [ n + r * n(n-1)/2 ]
-        # 선불식(begin)에서는 한 달 더 길게 붙이려면 k를 1..n로 두면 됨:
-        #   sum_{k=1}^{n} (1 + r*k) = n + r * n(n+1)/2
-        if payment_timing == "end":
-            factor = months + r * months * (months - 1) / 2.0
-        elif payment_timing == "begin":
-            factor = months + r * months * (months + 1) / 2.0
-        else:
-            raise ValueError("payment_timing은 'end' 또는 'begin'이어야 합니다.")
-        A = target_fv / factor
+    if intr_rate_type == "단리":
+        # 단리: 각 월별 납입금에 대해 남은 기간만큼만 이자 적용
+        total = 0
+        for i in range(n):
+            months = n - i
+            total += monthly_deposit * (1 + r * months)
+        return round(total, 2)
+    elif intr_rate_type == "복리":
+        # 복리: 각 월별 납입금에 대해 남은 기간만큼 복리 적용
+        total = 0
+        for i in range(n):
+            months = n - i
+            total += monthly_deposit * ((1 + r) ** months)
+        return round(total, 2)
     else:
-        raise ValueError("interest_type은 'compound' 또는 'simple'이어야 합니다.")
+        raise ValueError("intr_rate_type은 '단리' 또는 '복리'여야 합니다.")
+    
+def calculate_stock_return(invest_amount: float, rate: float, months: int) -> float:
+    """
+    단순 주식 수익 계산: 투자금액 * 수익률 * 개월수
+    - invest_amount: 투자 금액(원)
+    - rate: 월별 수익률(예: 0.03 → 3%)
+    - months: 투자 개월 수
+    """
+    return round(invest_amount * rate * months, 2)
 
-    return float(A)
-
-
-# 사용 예시
+# ===== 사용 예시 =====
 if __name__ == "__main__":
-    names = ["삼성전자", "NAVER", "카카오"]
-    out = compute_rate_and_risk(names)
-    print(out)
+    # 1) KRX 시가총액 TOP100 자동 수집 (코스피/코스닥 포함)
+    name_to_ticker_top100 = fetch_top100_krx_by_marketcap()
 
+    # 2) 한 달 수익률 및 리스크 계산
+    out = compute_rate_and_risk_from_tickers(name_to_ticker_top100)
 
+    # 3) 예시 출력: 수익률 상위 10개
+    df_out = (
+        pd.DataFrame.from_dict(out, orient="index")
+          .reset_index().rename(columns={"index": "Name"})
+    )
+
+    # 결과를 로컬 CSV로 저장
+    df_out.to_csv("krx_top100_rate_risk.csv", index=False, encoding="utf-8-sig")
+
+    if "rate" in df_out.columns:
+        df_top10 = df_out.sort_values("rate", ascending=False).head(10)
+        print(df_top10)
+    else:
+        print(df_out.head())

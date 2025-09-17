@@ -61,13 +61,12 @@ class SelectedFinPrdt:
     intr_rate: float
     etc_notes: Optional[str] = None
 
+@dataclass
 class SelectedStockPrdt:
     kor_co_nm: str
-    fin_prdt_nm: str
-    max_limit: int
-    intr_rate_type_nm: str # 단리, 복리
-    save_trm: int
-    intr_rate: float
+    rate: float
+    risk: float
+    risk_pct: float
 
 @dataclass
 class RebalanceAction:
@@ -142,6 +141,9 @@ class GraphState(TypedDict):
 
     # 감사·실행 추적
     events: List[Dict]                            # 작은 이벤트 로그(노드 진입/결정 등)
+
+    # 지나간 개월수 (몇번째 리벨런싱인지)
+    months_passed: int
 
     # 대화 메시지 (LangChain messages)
     messages: Annotated[List, add_messages]
