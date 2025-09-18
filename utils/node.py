@@ -175,9 +175,9 @@ def select_fin_prdt(state:GraphState):
     financial_products = pd.read_csv('./data/financial_products.csv')
 
     top_10_products = financial_products[
-    (financial_products["save_trm"] <= state["goal"].target_months) &
-    ((financial_products["max_limit"] > state["investable_amount"]) & (financial_products["label"] == "적금"))
-].sort_values("intr_rate", ascending=False).head(10)
+        (financial_products["save_trm"] <= state["goal"].target_months) &
+        ((financial_products["max_limit"] > state["investable_amount"]) & (financial_products["label"] == "적금"))
+    ].sort_values("intr_rate", ascending=False).head(10)
 
     top_10_products = top_10_products[["kor_co_nm", "fin_prdt_nm", "max_limit", "intr_rate_type_nm", "save_trm", "intr_rate", "etc_note", "label"]].to_dict(orient='records')
 
@@ -302,8 +302,51 @@ def build_indicators(state: GraphState):
 
     return {**state, "indicators": indicators}
 
-def build_portfolios(state:GraphState):
-    return GraphState()
+def build_portfolios(state: GraphState):
+    # HUMAN-in-the-loop로 비율을 입력받음
+    decision = interrupt({
+        "step": "select_portfolio_ratio",
+        "message": "적금/주식 투자 비율(0~100%)을 입력해주세요. (예: 30은 적금 70%, 주식 30%)",
+        "proposed": {"stock_allocation_pct": 30},
+        "fields": [
+            {"name": "stock_allocation_pct", "type": "number", "label": "주식 비율(%)"},
+        ],
+        "buttons": ["submit"]
+    })
+    stock_allocation_pct = int(decision.get("stock_allocation_pct", 30))
+    ratio = stock_allocation_pct / 100.0
+    investable_amount = state["investable_amount"]
+    months = state["goal"].target_months - state.get("months_passed", 0)
+    fin = state.get("selected_fin_prdt")
+    stock = state.get("selected_stock_prdt")
+    saving_amt = int(investable_amount * (1 - ratio))
+    stock_amt = investable_amount - saving_amt
+    # 적금 만기 수령액
+    if fin:
+        saving_final = calculate_savings_final_amount(
+            monthly_deposit=saving_amt,
+            intr_rate=fin.intr_rate,
+            intr_rate_type=fin.intr_rate_type_nm,
+            save_trm=months
+        )
+    else:
+        saving_final = 0
+    # 주식 만기 수령액
+    if stock:
+        stock_final = calculate_stock_final_amount(
+            invest_amount=stock_amt,
+            rate=stock.rate,
+            months=months
+        )
+    else:
+        stock_final = 0
+    portfolio = Portfolio(
+        fin_prdt=fin,
+        stock_prdts=stock,
+        stock_allocation=ratio,
+        final_amount=saving_final + stock_final
+    )
+    return {**state, "user_selected_portfolio": portfolio}
 
 def crawl_news(state:GraphState):
     return GraphState()
