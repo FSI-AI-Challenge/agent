@@ -32,14 +32,6 @@ class NewsDecision(str, Enum):
     REVIEW = "review"      # 재검토(추가 분석 필요)
     RECOMMEND_REFRESH = "recommend_refresh"  # 추천 알고리즘 다시 시작
 
-class SourceType(str, Enum):
-    STOCK = "stock"
-    ETF = "etf"
-    FUND = "fund"
-    BOND = "bond"
-    CASH = "cash"
-    OTHER = "other"
-
 @dataclass
 class Goal:
     target_amount: int
@@ -61,13 +53,12 @@ class SelectedFinPrdt:
     intr_rate: float
     etc_notes: Optional[str] = None
 
+@dataclass
 class SelectedStockPrdt:
     kor_co_nm: str
-    fin_prdt_nm: str
-    max_limit: int
-    intr_rate_type_nm: str # 단리, 복리
-    save_trm: int
-    intr_rate: float
+    rate: float
+    risk: float
+    risk_pct: float
 
 @dataclass
 class RebalanceAction:
@@ -78,13 +69,10 @@ class RebalanceAction:
 
 @dataclass
 class Portfolio:
-    ticker: str
-    name: str
-    source_type: SourceType
-    target_percent: float                  # 목표 비중(%)
-    current_percent: float                 # 현재 비중(%)
-    current_value: float                   # 현재 평가액(원)
-    notes: Optional[str] = None            # 비고/설명
+    fin_prdt: SelectedFinPrdt | None
+    stock_prdts: SelectedStockPrdt | None
+    stock_allocation: float = 0.0           # 주식 비중(%)
+    final_amount: float = 0.0             # 만기 예상 금액(원)
 
 @dataclass
 class RebalancePlan:
@@ -103,13 +91,6 @@ class NewsSignal:
     sentiment: Sentiment
     decision: NewsDecision | None = None   # 판단 결과
 
-@dataclass
-class RAGTrace:
-    query: str
-    topk: int
-    ids: List[str]                         # 검색된 상품/문서 id
-    notes: str | None = None
-
 class GraphState(TypedDict): 
     user_id: int
     created_ts: str
@@ -125,13 +106,13 @@ class GraphState(TypedDict):
     goal: Goal
     investable_amount: int
 
+    # 재무상품 선택
     selected_fin_prdt: SelectedFinPrdt
     selected_stock_prdt: SelectedStockPrdt
 
-    # RAG/추천
-    rag_trace: RAGTrace
-    candidate_portfolios: List[Portfolio]         # 30/50/70% 후보
-    selected_portfolio: Portfolio | None          # 최종 선택안
+    # 포트폴리오
+    indicators: Dict[int, Portfolio]        # 30/50/70% 시나리오
+    user_selected_portfolio: Portfolio       # 사용자 선택 최종 포트폴리오
 
     # 리밸런싱
     rebalance_plan: RebalancePlan | None
@@ -142,6 +123,9 @@ class GraphState(TypedDict):
 
     # 감사·실행 추적
     events: List[Dict]                            # 작은 이벤트 로그(노드 진입/결정 등)
+
+    # 지나간 개월수 (몇번째 리벨런싱인지)
+    months_passed: int
 
     # 대화 메시지 (LangChain messages)
     messages: Annotated[List, add_messages]
