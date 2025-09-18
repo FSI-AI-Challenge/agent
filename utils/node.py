@@ -155,10 +155,10 @@ def hitl_confirm_input(state:GraphState) -> GraphState:
     print(f"사용자 입력 검증 종료: {target_amount, target_months, investable_amount}")
     return GraphState(
         goal=Goal(
-            target_amount=int(decision["target_amount"]),
-            target_months=int(decision["target_months"]),
+            target_amount=target_amount,
+            target_months=target_months,
         ),
-        investable_amount=decision["investable_amount"]
+        investable_amount=investable_amount
     )
 
 def _to_int(v): 
