@@ -167,15 +167,15 @@ def calculate_savings_final_amount(monthly_deposit: float, intr_rate: float, int
         return round(total, 2)
     else:
         raise ValueError("intr_rate_type은 '단리' 또는 '복리'여야 합니다.")
-    
-def calculate_stock_return(invest_amount: float, rate: float, months: int) -> float:
+
+def calculate_stock_final_amount(invest_amount: float, rate: float, months: int) -> float:
     """
     단순 주식 수익 계산: 투자금액 * 수익률 * 개월수
     - invest_amount: 투자 금액(원)
     - rate: 월별 수익률(예: 0.03 → 3%)
     - months: 투자 개월 수
     """
-    return round(invest_amount * rate * months, 2)
+    return round(invest_amount * (1 + rate) * months, 2)
 
 # ===== 사용 예시 =====
 if __name__ == "__main__":

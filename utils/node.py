@@ -257,39 +257,50 @@ def select_stock_products(state:GraphState):
 
     return {**state, "selected_stock_prdt": selected}
 
-def calculate_plan(state:GraphState):
-    fin = state["selected_fin_prdt"]
-    stock = state["selected_stock_prdt"]
-    months = state["goal"].target_months
-    investable = state["investable_amount"]
+def build_indicators(state: GraphState):
+    investable_amount = state["investable_amount"]
+    months = state["goal"].target_months - state.get("months_passed", 0)
 
-    savings_final = calculate_savings_final_amount(
-        monthly_deposit=investable,
-        intr_rate=fin.intr_rate,
-        intr_rate_type=fin.intr_rate_type_nm,
-        save_trm=months
-    )
-    stock_final = calculate_stock_return(
-        invest_amount=investable,
-        rate=stock.rate / 100,  # % -> 소수
-        months=months
-    )
-    total_final = savings_final + stock_final
+    fin = state.get("selected_fin_prdt")
+    stock = state.get("selected_stock_prdt")
 
-    plan = {
-        "savings_final": savings_final,
-        "stock_final": stock_final,
-        "total_final": total_final,
-        "goal_amount": state["goal"].target_amount,
-        "goal_months": months,
-        "investable_per_month": investable,
-        "fin_prdt": fin,
-        "stock_prdt": stock
-    }
-    return {**state, "plan": plan}
+    # 시나리오별 비율
+    ratios = [0.3, 0.5, 0.7]
+    indicators = {}
 
-def build_indicators(state:GraphState):
-    return GraphState()
+    for ratio in ratios:
+        saving_amt = int(investable_amount * (1 - ratio))
+        stock_amt = investable_amount - saving_amt
+
+        # 적금 만기 수령액
+        if fin:
+            saving_final = calculate_savings_final_amount(
+                monthly_deposit=saving_amt,
+                intr_rate=fin.intr_rate,
+                intr_rate_type=fin.intr_rate_type_nm,
+                save_trm=months
+            )
+        else:
+            saving_final = 0
+
+        # 주식 만기 수령액
+        if stock:
+            stock_final = calculate_stock_final_amount(
+                invest_amount=stock_amt,
+                rate=stock.rate,
+                months=months
+            )
+        else:
+            stock_final = 0
+
+        indicators[int(ratio * 100)] = Portfolio(
+            fin_prdt=fin,
+            stock_prdts=stock,
+            stock_allocation=ratio,
+            final_amount=saving_final + stock_final
+        )
+
+    return {**state, "indicators": indicators}
 
 def build_portfolios(state:GraphState):
     return GraphState()
