@@ -8,7 +8,6 @@ from typing import Annotated, Dict, List, Optional, Tuple, TypedDict
 from langgraph.graph import add_messages
 
 
-
 class UIStep(str, Enum):
     INPUT_GOAL = "INPUT_GOAL"                     # 목표 금액/기간 입력
     INPUT_PERCENT = "INPUT_PERCENT"               # % 입력 (투자 가능 금액 안내)
@@ -26,11 +25,6 @@ class Sentiment(str, Enum):
     MIXED = "mixed"
     UNKNOWN = "unknown"
 
-class NewsDecision(str, Enum):
-    HOLD = "hold"          # 그대로 보유
-    SELL = "sell"          # 매도
-    REVIEW = "review"      # 재검토(추가 분석 필요)
-    RECOMMEND_REFRESH = "recommend_refresh"  # 추천 알고리즘 다시 시작
 
 @dataclass
 class Goal:
@@ -84,19 +78,16 @@ class RebalancePlan:
 @dataclass
 class NewsSignal:
     ticker: str
-    headline: str
-    url: str
-    published_at: str                      # ISO8601
     summary: str
     sentiment: Sentiment
-    decision: NewsDecision | None = None   # 판단 결과
 
 class GraphState(TypedDict): 
     user_id: int
     created_ts: str
     question:str
     answer:str
-    
+    user_percent:int
+
     route:str
 
     # 대화/프론트 단계

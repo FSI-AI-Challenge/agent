@@ -7,7 +7,6 @@ from langchain_ollama import ChatOllama
 
 llm = ChatOllama(model='gpt-oss:20b', streaming=True)
 
-from utils.state import *
 from utils.tools import *
 
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -312,6 +311,7 @@ def build_portfolios(state: GraphState):
     })
     stock_allocation_pct = int(decision.get("stock_allocation_pct", 30))
     ratio = stock_allocation_pct / 100.0
+    state["user_percent"] = ratio
     investable_amount = state["investable_amount"]
     months = state["goal"].target_months - state.get("months_passed", 0)
     fin = state.get("selected_fin_prdt")
@@ -345,17 +345,188 @@ def build_portfolios(state: GraphState):
     )
     return {**state, "user_selected_portfolio": portfolio}
 
-def crawl_news(state:GraphState):
-    return GraphState()
+def crawl_news(state: GraphState) -> GraphState:
+    print("crawl_news start")
+    query = state.get("news_query") or state.get("question") or ""
+    if not query:
+        print("  query 없음 → 빈 결과")
+        return {**state, "news_signals": state.get("news_signals", [])}
 
-def summarize_news(state:GraphState):
-    return GraphState()
+    n_items = 5
+    max_attempts = 3
 
-def analyze_sentiment(state:GraphState):
-    return GraphState()
+    naver = get_naver_tool()
+    collected_all: List[Dict[str, Any]] = []
+    attempts, dropped_total = 0, 0
+
+    while attempts < max_attempts and len(collected_all) < n_items:
+        q = refined_query(query, attempts)
+        start = 1 + attempts * n_items
+        items = naver_search_once(naver, q, start=start, display=n_items)
+        print(f"[crawl_news] attempt={attempts+1}, q='{q}', fetched={len(items)}, start={start}")
+        cleaned, dropped = dedup_and_clean(items)
+        collected_all.extend(cleaned)
+        dropped_total += dropped
+        attempts += 1
+
+    # 상위 n개만 사용
+    articles = collected_all[:n_items]
+
+    new_signals = [
+        NewsSignal(
+            ticker=str(query),
+            summary=(it.get("content") or "").strip(),
+            sentiment=Sentiment.UNKNOWN,
+        )
+        for it in articles
+        if (it.get("content") or "").strip()
+    ]
+
+    merged = (state.get("news_signals") or []) + new_signals
+    print(f"crawl_news 종료: kept={len(new_signals)}, attempts={attempts}, dropped={dropped_total}")
+    return {**state, "news_signals": merged}
+
+
+def summarize_news(state: GraphState) -> GraphState:
+    print("summarize_news 시작")
+    focus = state.get("news_query") or state.get("question") or ""
+    signals: List[NewsSignal] = state.get("news_signals") or []
+
+    strategy_prompt = lambda content: f"""
+    아래 기사 본문을 읽고, 타깃 기업({focus})의 주가/기업가치에 직접적인 영향을 주는 정보만
+    우선 요약하기 위한 전략을 한두 문장으로 제시해줘.
+    - {focus}의 실적/가이던스/수주/규제/경쟁·공급망/재무 이벤트(증자·자사주 등) 중심
+    - 단순 업계 일반론, 타사/거시 코멘트만 있는 경우는 "관련성 낮음"으로 판단
+
+    기사 본문:
+    {content}
+
+    전략:
+    """.strip()
+
+    summary_prompt = lambda content, strategy: f"""
+    지침에 따라 {focus} 관련 핵심만 요약해줘.
+    - {focus}에 '직접' 영향 없는 내용은 제외
+    - 반드시 3개 불릿 이내: (1) 주가 영향 요인, (2) 촉매·수치, (3) 리스크/유의점
+
+    지침:
+    {strategy}
+
+    기사 본문:
+    {content}
+
+    요약:
+    """.strip()
+
+    summarized: List[NewsSignal] = []
+
+    for sig in signals:
+        raw_content = (sig.summary or "").strip()  # crawl_news에서 임시 저장한 원문
+        if not raw_content:
+            continue
+
+        strat = llm.invoke(strategy_prompt(raw_content)).content
+        summary = llm.invoke(summary_prompt(raw_content, strat)).content.strip()
+
+        summarized.append(
+            NewsSignal(
+                ticker=sig.ticker,
+                summary=summary,
+                sentiment=Sentiment.UNKNOWN,
+            )
+        )
+
+    print(f"summarize_news 종료: summarized={len(summarized)}")
+    return {**state, "news_signals": summarized}
+
+
+def analyze_sentiment(state: GraphState) -> GraphState:
+    print("analyze_sentiment start")
+    signals: List[NewsSignal] = state.get("news_signals") or []
+    labeled: List[NewsSignal] = []
+    pos = 0
+
+    prompt_template = (
+        "너는 한국 주식 시장 뉴스 요약을 읽고 주가 방향을 판단하는 분석기다.\n\n"
+        "반드시 다음 중 하나만 출력하세요 (대문자, 한 단어):\n"
+        "POSITIVE\n"
+        "NEGATIVE\n\n"
+        "요약:\n{summary}\n\n"
+        "정답:"
+    )
+
+    for sig in signals:
+        summ = (sig.summary or "").strip()
+        if not summ:
+            continue
+        try:
+            prompt = prompt_template.format(summary=summ)
+            out = llm.invoke(prompt).content.strip().upper()
+            token = out.split()[0] if out else ""
+            is_pos = (token == "POSITIVE")
+        except Exception:
+            is_pos = False
+
+        sentiment = Sentiment.POSITIVE if is_pos else Sentiment.NEGATIVE
+        if is_pos:
+            pos += 1
+
+        labeled.append(
+            NewsSignal(
+                ticker=sig.ticker,
+                summary=summ,
+                sentiment=sentiment,
+            )
+        )
+
+    total = len(labeled)
+    majority = 1 if pos > (total - pos) else 0 
+
+    new_months_passed = int(state.get("months_passed", 0)) + 1
+
+
+    print(f"analyze_sentiment 종료: total={total}, pos={pos}, majority={majority}")
+    return {**state, "news_signals": labeled, "majority_sentiment": majority, "months_passed": new_months_passed}
+
 
 def evaluate_rebalance(state:GraphState):
-    return GraphState()
+    ratio = state.get("user_percent") / 100
+
+    investable_amount = state["investable_amount"]
+    months = state["goal"].target_months - state.get("months_passed", 0)
+    fin = state.get("selected_fin_prdt")
+    stock = state.get("selected_stock_prdt")
+
+    saving_amt = int(investable_amount * (1 - ratio))
+    stock_amt = investable_amount - saving_amt
+
+    if fin:
+        saving_final = calculate_savings_final_amount(
+            monthly_deposit=saving_amt,
+            intr_rate=fin.intr_rate,
+            intr_rate_type=fin.intr_rate_type_nm,
+            save_trm=months
+        )
+    else:
+        saving_final = 0
+
+    if stock:
+        stock_final = calculate_stock_final_amount(
+            invest_amount=stock_amt,
+            rate=stock.rate,
+            months=months
+        )
+    else:
+        stock_final = 0
+
+    portfolio = Portfolio(
+        fin_prdt=fin,
+        stock_prdts=stock,
+        stock_allocation=ratio,
+        final_amount=saving_final + stock_final
+    )
+
+    return {**state, "user_selected_portfolio": portfolio}
 
 def is_goal_reached(state:GraphState):
     return "yes"
