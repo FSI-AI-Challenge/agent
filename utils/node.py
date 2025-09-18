@@ -161,9 +161,6 @@ def hitl_confirm_input(state:GraphState) -> GraphState:
         investable_amount=decision["investable_amount"]
     )
 
-def get_percent(state:GraphState):
-    return GraphState()
-
 def _to_int(v): 
     return int(v) if v is not None and str(v).strip() != "" else 0
 def _to_float(v):

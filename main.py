@@ -1,28 +1,34 @@
 from langchain_core.runnables import RunnableConfig
-from langchain_teddynote.messages import random_uuid
+from langchain_teddynote.messages import invoke_graph, stream_graph, random_uuid
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import StateGraph, END
+from langgraph.graph import StateGraph, add_messages, END
+from langgraph.types import interrupt, Command
 from langchain_ollama import ChatOllama
-from langgraph.prebuilt import ToolNode
-
+from langgraph.types import Command
+from typing import Annotated, Dict, List, Optional, Tuple, TypedDict
+from dataclasses import dataclass, field
+from enum import Enum
 from datetime import datetime, timezone, timedelta
-
-from utils.node import *
 from utils.state import *
-from utils.tools import *
+from utils.node import *
+from langgraph.types import Command
+
+llm = ChatOllama(model='gpt-oss:20b')
 
 graph = StateGraph(GraphState)
 
+# 승현
 graph.add_node("planner", planner)
 graph.add_node("chatbot", chatbot)
 graph.add_node("get_goal", get_goal)
 graph.add_node("load_profile", load_profile)
 graph.add_node("hitl_confirm_input", hitl_confirm_input)
-graph.add_node("get_percent", get_percent)
-graph.add_node("retrieve_products", retrieve_products)
-graph.add_node("select_products", select_products)
-graph.add_node("build_indicates", build_indicates)
+# 주엽
+graph.add_node("select_fin_prdt", select_fin_prdt)
+graph.add_node("select_stock_products", select_stock_products)
+graph.add_node("build_indicators", build_indicators)
 graph.add_node("build_portfolios", build_portfolios)
+# 지수
 graph.add_node("crawl_news", crawl_news)
 graph.add_node("summarize_news", summarize_news)
 graph.add_node("analyze_sentiment", analyze_sentiment)
@@ -39,52 +45,44 @@ graph.add_conditional_edges(
 )
 graph.add_edge("get_goal", "load_profile")
 graph.add_edge("load_profile", 'hitl_confirm_input')
-graph.add_edge("hitl_confirm_input", END)
+graph.add_edge("hitl_confirm_input", "select_fin_prdt")
+graph.add_edge("select_fin_prdt", "select_stock_products")
+graph.add_edge("select_stock_products", "build_indicators")
+graph.add_edge("build_indicators", "build_portfolios")
+graph.add_edge("build_portfolios", END)
 graph.add_edge("chatbot", END)
-
-# graph.set_entry_point("start")
-# graph.add_conditional_edges(
-#     "start",
-#     is_our_service,
-#     {
-#         "yes":"get_goal",
-#         "no":"chatbot"
-#     }
-# )
-# graph.add_edge("get_goal", "load_profile")
-# graph.add_edge("load_profile", "hitl_confirm_input")
-# graph.add_edge("hitl_confirm_input", "get_percent")
-# graph.add_edge("get_percent", "retrieve_products")
-# graph.add_edge("retrieve_products", "select_products")
-# graph.add_edge("select_products", "build_indicates")
-# graph.add_edge("build_indicates", "build_portfolios")
-# graph.add_edge("build_portfolios", "crawl_news")
-# graph.add_edge("crawl_news", "summarize_news")
-# graph.add_edge("summarize_news", "analyze_sentiment")
-# graph.add_edge("analyze_sentiment", "evaluate_rebalance")
-# graph.add_conditional_edges(
-#     "evaluate_rebalance",
-#     is_rebalance_needed,
-#     {
-#         "yes":"crawl_news",
-#         "no":"start"
-#     }
-# )
-# graph.add_edge("chatbot", "start")
-
 
 memory = MemorySaver()
 app = graph.compile(checkpointer=memory)
 
+if __name__ == "__main__":
+    KST = timezone(timedelta(hours=9))
 
-KST = timezone(timedelta(hours=9))
+    user_id = 1
+    target_amount = 6000000
+    target_months = 12
+    created_ts = datetime.now(KST).isoformat()
+    config = RunnableConfig(recursion_limit=10, configurable={"thread_id":random_uuid()})
 
-user_id = 1
-target_amount = 1000000
-target_months = 6
-created_ts = datetime.now(KST).isoformat()
+    events = app.stream(GraphState(
+        user_id=user_id,
+        created_ts=created_ts,
+        question=f"나는 {target_months}개월 안에 {target_amount}원을 모으고 싶어. 어떻게 해야 할까?",
+        months_passed=0,
+        investable_amount=500000,
+    ), config=config)
 
-config = RunnableConfig(recursion_limit=10, configurable={"thread_id":random_uuid()})
+    for event in events:
+        print(event)
 
-inputs = GraphState(user_id=user_id, created_ts=created_ts, 
-                    question=f"내 목표 금액은 {target_amount}이고, {target_months}개월 동안 모을거야.")
+    # 사용자에게 input 받아야 하는 부분
+    user_decision = {"target_amount": target_amount, "target_months": target_months, "investable_amount": 500000}
+    for ev in app.stream(Command(resume=user_decision), config=config):
+        print(ev)
+
+    # 사용자에게 input 받아야 하는 부분
+    user_decision = {"stock_allocation_pct": 30}
+    for ev in app.stream(Command(resume=user_decision), config=config):
+        print(ev)
+        
+    print(app.get_state(config))
