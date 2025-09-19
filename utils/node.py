@@ -22,12 +22,12 @@ def planner(state:GraphState) -> GraphState:
         You MUST choose exactly one of the following nodes:
         - "get_goal": when the user is asking about our financial planning / savings / investment service.
         - "chatbot": when the user is making a general request or any query not related to our service.
-
+        - "crawl_news": when the user want to rebalance, for example "리밸런싱 해줘", "다시 만들어줘", etc.
         User Input:
         {question}
 
         Return ONLY node name:
-        "get_goal" or "chatbot"
+        "get_goal" or "crawl_news" or "chatbot"
     '''
     response = llm.invoke(prompt)
     print(f"서비스 판단 종료: {response.content}")
@@ -352,7 +352,7 @@ def crawl_news(state: GraphState) -> GraphState:
         print("  query 없음 → 빈 결과")
         return {**state, "news_signals": state.get("news_signals", [])}
 
-    n_items = 5
+    n_items = 1
     max_attempts = 3
 
     naver = get_naver_tool()
@@ -490,8 +490,8 @@ def analyze_sentiment(state: GraphState) -> GraphState:
 
 
 def evaluate_rebalance(state:GraphState):
-    ratio = state.get("user_percent") / 100
-
+    ratio = state.get("user_percent")
+    
     investable_amount = state["investable_amount"]
     months = state["goal"].target_months - state.get("months_passed", 0)
     fin = state.get("selected_fin_prdt")

@@ -59,14 +59,13 @@ graph.add_conditional_edges(
     }
 )
 graph.add_edge("build_indicators", "build_portfolios")
-graph.add_edge("build_portfolios", "crawl_news")
 graph.add_edge("crawl_news", "summarize_news")
 graph.add_edge("summarize_news", "analyze_sentiment")
 graph.add_conditional_edges(
     "analyze_sentiment",
     lambda s: "positive" if int(s.get("majority_sentiment", 0)) == 1 else "negative",
     {
-        "positive": END,                       
+        "positive": "evaluate_rebalance",                       
         "negative": "select_stock_products",   
     }
 )
