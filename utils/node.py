@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from collections import defaultdict
 from utils.state import *
 import json
@@ -352,7 +352,7 @@ def crawl_news(state: GraphState) -> GraphState:
         print("  query 없음 → 빈 결과")
         return {**state, "news_signals": state.get("news_signals", [])}
 
-    n_items = 1
+    n_items = 5
     max_attempts = 3
 
     naver = get_naver_tool()

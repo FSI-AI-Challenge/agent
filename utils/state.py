@@ -1,7 +1,7 @@
 # python >=3.10
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Annotated, Dict, List, Optional, Tuple, TypedDict
 
