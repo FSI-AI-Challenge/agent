@@ -3,7 +3,6 @@ from langchain_teddynote.messages import random_uuid
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, END
 from langgraph.types import Command
-from langchain_ollama import ChatOllama
 from datetime import datetime, timezone, timedelta
 from utils.state import *
 from utils.node import *
