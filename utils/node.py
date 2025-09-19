@@ -347,7 +347,7 @@ def build_portfolios(state: GraphState):
 
 def crawl_news(state: GraphState) -> GraphState:
     print("crawl_news start")
-    query = state.get("news_query") or state.get("question") or ""
+    query = getattr(state.get("selected_stock_prdt", None), "kor_co_nm", None)
     if not query:
         print("  query 없음 → 빈 결과")
         return {**state, "news_signals": state.get("news_signals", [])}
@@ -389,7 +389,7 @@ def crawl_news(state: GraphState) -> GraphState:
 
 def summarize_news(state: GraphState) -> GraphState:
     print("summarize_news 시작")
-    focus = state.get("news_query") or state.get("question") or ""
+    focus = getattr(state.get("selected_stock_prdt", None), "kor_co_nm", None)
     signals: List[NewsSignal] = state.get("news_signals") or []
 
     strategy_prompt = lambda content: f"""
@@ -527,9 +527,3 @@ def evaluate_rebalance(state:GraphState):
     )
 
     return {**state, "user_selected_portfolio": portfolio}
-
-def is_goal_reached(state:GraphState):
-    return "yes"
-
-def is_rebalance_needed(state:GraphState):
-    return "yes"

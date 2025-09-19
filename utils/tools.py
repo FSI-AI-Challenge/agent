@@ -1,7 +1,6 @@
 # pip install yfinance pandas numpy python-dateutil
 import yfinance as yf
 import pandas as pd
-import numpy as np
 from dateutil.relativedelta import relativedelta
 from datetime import datetime, timedelta
 import FinanceDataReader as fdr
