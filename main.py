@@ -65,7 +65,7 @@ graph.add_conditional_edges(
     "analyze_sentiment",
     lambda s: "positive" if int(s.get("majority_sentiment", 0)) == 1 else "negative",
     {
-        "positive": "evaluate_rebalance",                       
+        "positive": END,                       
         "negative": "select_stock_products",   
     }
 )
